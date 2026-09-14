@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,6 +26,61 @@ PONYTAIL_SKILL = SKILLS_DIR / "ponytail" / "SKILL.md"
 REVIEW_SKILL = SKILLS_DIR / "ponytail-review" / "SKILL.md"
 
 _current_mode = None
+_rendered_skills = None
+
+HERMES_SCOPE = """## Hermes scope
+
+Skill-tool loads require explicit invocation or an allowed dependency of the selected owner. Do not select another main workflow, weaken requested coverage, or authorize writes, installs, agents, publication or runtime changes. Acknowledgement is not permission. Preserve the caller's scope and accepted decisions.
+
+The plugin owns automatic style injection and off/level state; metadata does not enable another always-on route. A helper invoked for review/help reports only; it does not change mode or apply fixes. Use Hermes-native tools and current host instructions, not another agent application.
+"""
+
+HERMES_UPDATE = """## Update
+
+Help is read-only. Report the installed state with `hermes plugins list` if requested; do not update, enable, disable or edit configuration merely to display this card.
+
+An explicitly approved plugin update uses `hermes plugins update ponytail`. After an approved update, restart the relevant Hermes session and verify commands plus off/level behavior. A local worktree change is not applied automatically. Do not enable an automatic updater here.
+
+"""
+
+
+HERMES_DEBT_SCAN = """## Scan
+
+Enumerate only the owning project's source files; exclude `.git`, dependencies,
+`node_modules`, vendor, build/dist/target output, generated files and documentation.
+Use the available file-search tool with explicit path/glob scope for `ponytail:`.
+A regex hit is only a candidate, never an automatic ledger row.
+
+Read each candidate in language context and confirm it belongs to a real source
+comment, not a quoted string, test fixture, Markdown/code example or documentation.
+If lexical context is ambiguous, leave it unconfirmed; do not guess a count.
+Deduplicate confirmed comments by exact path:line, then compute totals from that
+collection in code. Report unreadable/unsupported files as coverage gaps.
+
+"""
+
+
+def _hermes_skill_text(path: Path) -> str:
+    """Keep shared upstream bodies intact; adapt only the Hermes read surface."""
+    text = path.read_text(encoding="utf-8")
+    frontmatter = re.match(r"^---\n[\s\S]*?\n---\n", text)
+    if not frontmatter:
+        raise ValueError(f"Missing skill frontmatter: {path}")
+    body = text[frontmatter.end():]
+    if path.parent.name == "ponytail-debt":
+        if re.findall(r"(?m)^## (Scan|Output)\n", body) != ["Scan", "Output"]:
+            raise ValueError("Ponytail debt structure changed; review Hermes adaptation before loading")
+        body = re.sub(r"(?m)^## Scan\n[\s\S]*?(?=^## Output\n)", HERMES_DEBT_SCAN, body, count=1)
+    if path.parent.name == "ponytail-help":
+        body, hosts = re.subn(
+            r"(?m)^Codex uses[\s\S]*?(?=^## Deactivate)",
+            "Hermes uses the registered slash commands above. Do not install or switch to another agent application for this workflow.\n\n",
+            body,
+        )
+        body, updates = re.subn(r"(?m)^## Update\n[\s\S]*?(?=^## More)", HERMES_UPDATE, body)
+        if (hosts, updates) != (1, 1):
+            raise ValueError("Ponytail help structure changed; review Hermes adaptation before loading")
+    return frontmatter[0] + "\n" + HERMES_SCOPE + "\n" + body.lstrip("\n")
 
 
 def _normalize_runtime_mode(mode: str | None) -> str | None:
@@ -109,14 +165,14 @@ def build_injected_context(mode: str | None = None) -> str:
         return ""
     if configured == "review":
         try:
-            body = REVIEW_SKILL.read_text(encoding="utf-8")
+            body = _hermes_skill_text(REVIEW_SKILL)
             return f"PONYTAIL MODE ACTIVE — level: review\n\n{_strip_frontmatter(body)}"
         except OSError:
             return "PONYTAIL MODE ACTIVE — level: review. Review diffs for unnecessary complexity."
 
     effective = _normalize_runtime_mode(configured) or DEFAULT_MODE
     try:
-        body = PONYTAIL_SKILL.read_text(encoding="utf-8")
+        body = _hermes_skill_text(PONYTAIL_SKILL)
         return f"PONYTAIL MODE ACTIVE — level: {effective}\n\n{_filter_skill_body_for_mode(body, effective)}"
     except OSError:
         return _fallback_instructions(effective)
@@ -132,6 +188,7 @@ def _skill_prompt(command: str, args: str = "") -> str:
     tail = args.strip()
     target = f"\n\nUser arguments: {tail}" if tail else ""
     return (
+        f"/{command}\n"
         f"Load and follow the Hermes plugin skill `ponytail:{command}`. "
         f"{SKILL_COMMANDS[command]}{target}"
     )
@@ -194,10 +251,18 @@ def _make_skill_command_handler(ctx: Any, command: str) -> Callable[[str], str]:
 
 def register(ctx: Any) -> None:
     """Register Ponytail hooks, skills, and slash commands with Hermes."""
+    global _rendered_skills
+    # Native skill registration takes paths, not rendered content. These files
+    # are disposable process-local output, never a second maintained library.
+    if _rendered_skills is None:
+        _rendered_skills = tempfile.TemporaryDirectory(prefix="ponytail-hermes-")
     for child in sorted(SKILLS_DIR.iterdir() if SKILLS_DIR.exists() else []):
         skill_md = child / "SKILL.md"
         if child.is_dir() and skill_md.exists():
-            ctx.register_skill(child.name, skill_md)
+            rendered = Path(_rendered_skills.name) / child.name / "SKILL.md"
+            rendered.parent.mkdir(parents=True, exist_ok=True)
+            rendered.write_text(_hermes_skill_text(skill_md), encoding="utf-8")
+            ctx.register_skill(child.name, rendered)
 
     ctx.register_hook("pre_llm_call", _pre_llm_call)
     ctx.register_hook("pre_gateway_dispatch", rewrite_gateway_command)
