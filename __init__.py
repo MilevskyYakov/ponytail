@@ -28,6 +28,15 @@ REVIEW_SKILL = SKILLS_DIR / "ponytail-review" / "SKILL.md"
 _current_mode = None
 _rendered_skills = None
 
+HERMES_SKILL_METADATA = {
+    "ponytail": ("Coding restraint: explicit mode or plugin context.", "1.0.0"),
+    "ponytail-review": ("Explicit complexity review of a diff; read only.", "1.0.0"),
+    "ponytail-audit": ("Explicit whole-repo complexity audit; read only.", "1.0.0"),
+    "ponytail-debt": ("Explicit ponytail debt inventory; read only.", "1.0.2"),
+    "ponytail-gain": ("Explicit published benchmark card; not repo metrics.", "1.0.0"),
+    "ponytail-help": ("Explicit Hermes Ponytail help; no configuration writes.", "1.0.0"),
+}
+
 HERMES_SCOPE = """## Hermes scope
 
 Skill-tool loads require explicit invocation or an allowed dependency of the selected owner. Do not select another main workflow, weaken requested coverage, or authorize writes, installs, agents, publication or runtime changes. Acknowledgement is not permission. Preserve the caller's scope and accepted decisions.
@@ -66,6 +75,23 @@ def _hermes_skill_text(path: Path) -> str:
     frontmatter = re.match(r"^---\n[\s\S]*?\n---\n", text)
     if not frontmatter:
         raise ValueError(f"Missing skill frontmatter: {path}")
+    name = path.parent.name
+    if name not in HERMES_SKILL_METADATA or re.search(r"(?m)^metadata:", frontmatter[0]):
+        raise ValueError(f"Skill metadata changed; review Hermes adaptation: {path}")
+    description, version = HERMES_SKILL_METADATA[name]
+    header, descriptions = re.subn(
+        r"(?m)^description:[^\n]*(?:\n[ \t]+[^\n]*)*",
+        "description: " + json.dumps(description),
+        frontmatter[0][:-4],
+    )
+    if descriptions != 1:
+        raise ValueError(f"Skill description changed; review Hermes adaptation: {path}")
+    header += (
+        "metadata:\n  gerda:\n    schema: 1\n"
+        f"    version: {version}\n    status: ready\n    activation:\n"
+        f"      auto: none\n      direct: true\n      slash: [{name}]\n"
+        "      dependency: true\n---\n"
+    )
     body = text[frontmatter.end():]
     if path.parent.name == "ponytail-debt":
         if re.findall(r"(?m)^## (Scan|Output)\n", body) != ["Scan", "Output"]:
@@ -80,7 +106,7 @@ def _hermes_skill_text(path: Path) -> str:
         body, updates = re.subn(r"(?m)^## Update\n[\s\S]*?(?=^## More)", HERMES_UPDATE, body)
         if (hosts, updates) != (1, 1):
             raise ValueError("Ponytail help structure changed; review Hermes adaptation before loading")
-    return frontmatter[0] + "\n" + HERMES_SCOPE + "\n" + body.lstrip("\n")
+    return header + "\n" + HERMES_SCOPE + "\n" + body.lstrip("\n")
 
 
 def _normalize_runtime_mode(mode: str | None) -> str | None:

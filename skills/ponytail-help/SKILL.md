@@ -1,16 +1,9 @@
 ---
 name: ponytail-help
-description: "Explicit Hermes Ponytail help; no configuration writes."
-metadata:
-  gerda:
-    schema: 1
-    version: 1.0.0
-    status: ready
-    activation:
-      auto: none
-      direct: true
-      slash: [ponytail-help]
-      dependency: true
+description: >
+  Quick-reference card for all ponytail modes, skills, and commands.
+  One-shot display, not a persistent mode. Trigger: /ponytail-help,
+  "ponytail help", "what ponytail commands", "how do I use ponytail".
 ---
 
 # Ponytail Help

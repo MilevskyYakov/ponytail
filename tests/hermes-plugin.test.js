@@ -32,6 +32,7 @@ mod.register(ctx)
 assert len(ctx.skills) == 6
 assert all(not p.is_relative_to(mod.ROOT) for p in ctx.skills.values())
 for name, path in ctx.skills.items():
+    assert 'metadata:' not in (mod.SKILLS_DIR / name / 'SKILL.md').read_text()
     original = mod._strip_frontmatter((mod.SKILLS_DIR / name / 'SKILL.md').read_text())
     if name not in {'ponytail-help', 'ponytail-debt'}:
         assert mod._strip_frontmatter(path.read_text()) == mod.HERMES_SCOPE + '\n' + original
@@ -49,23 +50,35 @@ assert all(p.read_bytes() == text for p, text in source.items())
 with tempfile.TemporaryDirectory() as temporary:
     help_path = pathlib.Path(temporary) / 'ponytail-help' / 'SKILL.md'
     help_path.parent.mkdir()
-    help_path.write_text('---\nname: ponytail-help\n---\nUnknown updated layout\n')
+    help_path.write_text('---\nname: ponytail-help\ndescription: Fixture\n---\nUnknown updated layout\n')
     try:
         mod._hermes_skill_text(help_path)
-    except ValueError:
-        pass
+    except ValueError as exc:
+        assert 'help structure changed' in str(exc)
     else:
         raise AssertionError('changed upstream help must fail closed')
     debt_path = pathlib.Path(temporary) / 'ponytail-debt' / 'SKILL.md'
     debt_path.parent.mkdir()
     for body in ['Unknown updated layout', '## Scan\nfirst\n## Scan\nsecond\n## Output\nend', '## Scan\nbody\n## Output']:
-        debt_path.write_text('---\nname: ponytail-debt\n---\n' + body)
+        debt_path.write_text('---\nname: ponytail-debt\ndescription: Fixture\n---\n' + body)
         try:
             mod._hermes_skill_text(debt_path)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            assert 'debt structure changed' in str(exc)
         else:
             raise AssertionError('changed upstream debt must fail closed')
+    for header, expected in [
+        ('name: ponytail-debt\n', 'description changed'),
+        ('name: ponytail-debt\ndescription: Fixture\ndescription: Duplicate\n', 'description changed'),
+        ('name: ponytail-debt\ndescription: Fixture\nmetadata: {}\n', 'metadata changed'),
+    ]:
+        debt_path.write_text('---\n' + header + '---\n## Scan\nbody\n## Output\nend\n')
+        try:
+            mod._hermes_skill_text(debt_path)
+        except ValueError as exc:
+            assert expected in str(exc)
+        else:
+            raise AssertionError('changed upstream metadata must fail closed')
 print(json.dumps({name: p.read_text() for name, p in ctx.skills.items()}))
 `));
   for (const name of commands) {
