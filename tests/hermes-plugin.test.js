@@ -15,6 +15,90 @@ const skillCommands = commands.filter((name) => name !== 'ponytail');
 
 const root = path.join(__dirname, '..');
 
+test('Hermes skills keep manual/dependency gates and host-correct help', () => {
+  const rendered = JSON.parse(python(String.raw`
+import importlib.util, json, pathlib, tempfile
+spec = importlib.util.spec_from_file_location('ponytail_hermes_plugin', '__init__.py')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+class Ctx:
+    def __init__(self): self.skills = {}
+    def register_skill(self, name, path): self.skills[name] = pathlib.Path(path)
+    def register_hook(self, *args): pass
+    def register_command(self, *args, **kwargs): pass
+ctx = Ctx()
+source = {p: p.read_bytes() for p in mod.SKILLS_DIR.glob('*/SKILL.md')}
+mod.register(ctx)
+assert len(ctx.skills) == 6
+assert all(not p.is_relative_to(mod.ROOT) for p in ctx.skills.values())
+for name, path in ctx.skills.items():
+    assert 'metadata:' not in (mod.SKILLS_DIR / name / 'SKILL.md').read_text()
+    original = mod._strip_frontmatter((mod.SKILLS_DIR / name / 'SKILL.md').read_text())
+    if name not in {'ponytail-help', 'ponytail-debt'}:
+        assert mod._strip_frontmatter(path.read_text()) == mod.HERMES_SCOPE + '\n' + original
+    if name == 'ponytail-debt':
+        prefix, scan = original.split('## Scan\n', 1)
+        _, suffix = scan.split('## Output\n', 1)
+        expected = mod.HERMES_SCOPE + '\n' + prefix + mod.HERMES_DEBT_SCAN + '## Output\n' + suffix
+        assert mod._strip_frontmatter(path.read_text()) == expected
+# Registration rebuilds changed source output without changing its registered path.
+paths = dict(ctx.skills)
+ctx.skills['ponytail'].write_text('stale output')
+mod.register(ctx)
+assert ctx.skills == paths and ctx.skills['ponytail'].read_text() != 'stale output'
+assert all(p.read_bytes() == text for p, text in source.items())
+with tempfile.TemporaryDirectory() as temporary:
+    help_path = pathlib.Path(temporary) / 'ponytail-help' / 'SKILL.md'
+    help_path.parent.mkdir()
+    help_path.write_text('---\nname: ponytail-help\ndescription: Fixture\n---\nUnknown updated layout\n')
+    try:
+        mod._hermes_skill_text(help_path)
+    except ValueError as exc:
+        assert 'help structure changed' in str(exc)
+    else:
+        raise AssertionError('changed upstream help must fail closed')
+    debt_path = pathlib.Path(temporary) / 'ponytail-debt' / 'SKILL.md'
+    debt_path.parent.mkdir()
+    for body in ['Unknown updated layout', '## Scan\nfirst\n## Scan\nsecond\n## Output\nend', '## Scan\nbody\n## Output']:
+        debt_path.write_text('---\nname: ponytail-debt\ndescription: Fixture\n---\n' + body)
+        try:
+            mod._hermes_skill_text(debt_path)
+        except ValueError as exc:
+            assert 'debt structure changed' in str(exc)
+        else:
+            raise AssertionError('changed upstream debt must fail closed')
+    for header, expected in [
+        ('name: ponytail-debt\n', 'description changed'),
+        ('name: ponytail-debt\ndescription: Fixture\ndescription: Duplicate\n', 'description changed'),
+        ('name: ponytail-debt\ndescription: Fixture\nmetadata: {}\n', 'metadata changed'),
+    ]:
+        debt_path.write_text('---\n' + header + '---\n## Scan\nbody\n## Output\nend\n')
+        try:
+            mod._hermes_skill_text(debt_path)
+        except ValueError as exc:
+            assert expected in str(exc)
+        else:
+            raise AssertionError('changed upstream metadata must fail closed')
+print(json.dumps({name: p.read_text() for name, p in ctx.skills.items()}))
+`));
+  for (const name of commands) {
+    const text = rendered[name];
+    assert.match(text, /^description: "[^"\n]{1,57}"$/m, name);
+    assert.match(text, /^      auto: none$/m, name);
+    assert.match(text, /^      direct: true$/m, name);
+    assert.match(text, /^      dependency: true$/m, name);
+    assert.match(text, /## Hermes scope/, name);
+  }
+  const help = rendered['ponytail-help'];
+  assert.match(help, /hermes plugins update ponytail/);
+  assert.doesNotMatch(help, /npm install -g @anthropic-ai|brew upgrade claude-code/);
+  const debt = rendered['ponytail-debt'];
+  for (const guard of ['real source', 'quoted string', 'exact path:line', 'coverage gaps', 'file-search tool']) {
+    assert.ok(debt.includes(guard), guard);
+  }
+  assert.doesNotMatch(debt, /Each hit is one ledger row|grep -rnE/);
+});
+
 // ponytail: probe once; on Windows `python3` is the Store-alias stub that fails
 // even when Python is installed, so fall back to `python` (mirrors benchmarks/correctness.js).
 let pythonCmd;
@@ -227,6 +311,7 @@ print(json.dumps(cases, sort_keys=True))
 `);
   const data = JSON.parse(output);
   assert.match(data['/ponytail-review x'].text, /ponytail-review/);
+  assert.match(data['/ponytail-review x'].text, /^\/ponytail-review\n/);
   assert.match(data['/ponytail_audit repo'].text, /ponytail-audit/);
   assert.match(data['/ponytail_audit repo'].text, /repo/);
   assert.match(data['/ponytail-debt'].text, /ponytail-debt/);
