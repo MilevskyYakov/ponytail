@@ -288,7 +288,7 @@ def register(ctx: Any) -> None:
             rendered = Path(_rendered_skills.name) / child.name / "SKILL.md"
             rendered.parent.mkdir(parents=True, exist_ok=True)
             rendered.write_text(_hermes_skill_text(skill_md), encoding="utf-8")
-            ctx.register_skill(child.name, rendered)
+            ctx.register_skill(child.name, rendered, description=HERMES_SKILL_METADATA[child.name][0])
 
     ctx.register_hook("pre_llm_call", _pre_llm_call)
     ctx.register_hook("pre_gateway_dispatch", rewrite_gateway_command)
