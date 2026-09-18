@@ -22,8 +22,12 @@ spec = importlib.util.spec_from_file_location('ponytail_hermes_plugin', '__init_
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 class Ctx:
-    def __init__(self): self.skills = {}
-    def register_skill(self, name, path): self.skills[name] = pathlib.Path(path)
+    def __init__(self):
+        self.skills = {}
+        self.descriptions = {}
+    def register_skill(self, name, path, description=''):
+        self.skills[name] = pathlib.Path(path)
+        self.descriptions[name] = description
     def register_hook(self, *args): pass
     def register_command(self, *args, **kwargs): pass
 ctx = Ctx()
@@ -32,6 +36,9 @@ mod.register(ctx)
 assert len(ctx.skills) == 6
 assert all(not p.is_relative_to(mod.ROOT) for p in ctx.skills.values())
 for name, path in ctx.skills.items():
+    assert ctx.descriptions[name], name
+    assert ctx.descriptions[name] == mod.HERMES_SKILL_METADATA[name][0], name
+    assert 'description: ' + json.dumps(ctx.descriptions[name]) + '\n' in path.read_text(), name
     assert 'metadata:' not in (mod.SKILLS_DIR / name / 'SKILL.md').read_text()
     original = mod._strip_frontmatter((mod.SKILLS_DIR / name / 'SKILL.md').read_text())
     if name not in {'ponytail-help', 'ponytail-debt'}:
@@ -153,7 +160,7 @@ class Ctx:
         self.skills = []
         self.hooks = []
         self.commands = []
-    def register_skill(self, name, path):
+    def register_skill(self, name, path, description=''):
         self.skills.append((name, pathlib.Path(path).as_posix()))
     def register_hook(self, name, handler):
         self.hooks.append(name)
@@ -208,7 +215,7 @@ mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 class Ctx:
     def __init__(self): self.commands = {}
-    def register_skill(self, name, path): pass
+    def register_skill(self, name, path, description=''): pass
     def register_hook(self, name, handler): pass
     def register_command(self, name, handler, description='', args_hint=''):
         self.commands[name] = handler
@@ -259,7 +266,7 @@ class Ctx:
     def __init__(self):
         self.hooks = {}
         self.commands = {}
-    def register_skill(self, name, path): pass
+    def register_skill(self, name, path, description=''): pass
     def register_hook(self, name, handler): self.hooks[name] = handler
     def register_command(self, name, handler, description='', args_hint=''):
         self.commands[name] = handler
