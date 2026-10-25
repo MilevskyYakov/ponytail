@@ -193,7 +193,7 @@ spec = importlib.util.spec_from_file_location('ponytail_hermes_plugin', '__init_
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 ctx = mod.build_injected_context('ultra')
-print(json.dumps({'ctx': ctx}))
+print(json.dumps({'ctx': ctx, 'fallback': mod._fallback_instructions('ultra')}))
 `, { XDG_CONFIG_HOME: tmp });
   const { ctx } = JSON.parse(output);
 
@@ -202,6 +202,16 @@ print(json.dumps({'ctx': ctx}))
   assert.match(ctx, /ultra/i);
   assert.doesNotMatch(ctx, /^---/);
   assert.doesNotMatch(ctx, /\|\s*\*\*Lite\*\*/i);
+  // Check the real emitted instruction payload, not model behavior.
+  assert.match(ctx, /Inspect callers when the proposed change can affect their contract/);
+  assert.match(ctx, /Reuse existing\s+tests, fixtures and reproducible checks/);
+  assert.match(ctx, /Do not silently ship a reduced scope/);
+  assert.match(ctx, /security measures, accessibility basics/);
+  assert.doesNotMatch(ctx, /grep every caller|leaves ONE runnable check|No frameworks, no/);
+  const { fallback } = JSON.parse(output);
+  assert.match(fallback, /Reuse existing checks/);
+  assert.match(fallback, /applicable project validation/);
+  assert.match(fallback, /Stop after the requested result/);
 });
 
 test('Hermes mode config respects env, config file, off, and invalid command behavior', () => {

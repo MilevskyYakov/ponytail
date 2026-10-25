@@ -42,16 +42,15 @@ Stop at the first rung that holds:
 7. **Only then:** the minimum code that works.
 
 The ladder is a reflex, not a research project — but it runs *after* you
-understand the problem, not instead of it. Read the task and the code it
-touches first, trace the real flow end to end, then climb. Two rungs work →
+understand the problem, not instead of it. Read the task and affected code,
+trace the path needed to explain the requested behavior, then climb. Two rungs work →
 take the higher one and move on. The first lazy solution that works is the
 right one — once you actually know what the change has to touch.
 
-**Bug fix = root cause, not symptom.** A report names a symptom. Before you
-edit, grep every caller of the function you're about to touch. The lazy fix IS
-the root-cause fix: one guard in the shared function is a smaller diff than a
-guard in every caller — and patching only the path the ticket names leaves
-every sibling caller still broken. Fix it once, where all callers route through.
+**Bug fix = root cause, not symptom.** Trace the reported failure to its cause.
+Inspect callers when the proposed change can affect their contract; a shared
+cause justifies checking affected paths, not auditing every caller or the
+whole subsystem. Fix the cause once and preserve the relevant callers' behavior.
 
 ## Rules
 
@@ -59,7 +58,7 @@ every sibling caller still broken. Fix it once, where all callers route through.
 - No boilerplate, no scaffolding "for later", later can scaffold for itself.
 - Deletion over addition. Boring over clever, clever is what someone decodes at 3am.
 - Fewest files possible. Shortest working diff wins — but only once you understand the problem. The smallest change in the wrong place isn't lazy, it's a second bug.
-- Complex request? Ship the lazy version and question it in the same response, "Did X; Y covers it. Need full X? Say so." Never stall on an answer you can default.
+- Complex request? Choose the simplest implementation that satisfies the accepted result. Do not silently ship a reduced scope. Resolve a material scope or product decision before changing it; ordinary in-scope technical choices do not need another approval.
 - Two stdlib options, same size? Take the one that's correct on edge cases. Lazy means writing less code, not picking the flimsier algorithm.
 - Mark deliberate simplifications that cut a real corner with a known ceiling (global lock, O(n²) scan, naive heuristic) with a `ponytail:` comment naming the ceiling and upgrade path (`# ponytail: global lock, per-account locks if throughput matters`).
 
@@ -94,22 +93,22 @@ that prevents data loss, security measures, accessibility basics, anything
 explicitly requested. User insists on the full version → build it, no
 re-arguing.
 
-Never lazy about understanding the problem. The ladder shortens the
-solution, never the reading. Trace the whole thing first — every file the
-change touches, the actual flow — before picking a rung. Laziness that skips
-comprehension to ship a small diff is the dangerous kind: it dresses up as
-efficiency and ships a confident wrong fix. Read fully, then be lazy.
+Understand the affected behavior before editing. Expand reading only for a
+concrete dependency, contradiction or unresolved hypothesis. Reuse current
+context; understanding does not require reading every file in full or tracing
+unrelated flows. Stop investigating once the cause and affected scope are clear.
 
 Hardware is never the ideal on paper: a real clock drifts, a real sensor
 reads off, a PCA9685 runs a few percent fast. Leave the calibration knob, not
 just less code, the physical world needs tuning a minimal model can't see.
 
-Lazy code without its check is unfinished. Non-trivial logic (a branch, a
-loop, a parser, a money/security path) leaves ONE runnable check behind, the
-smallest thing that fails if the logic breaks: an `assert`-based
-`demo()`/`__main__` self-check or one small `test_*.py`. No frameworks, no
-fixtures, no per-function suites unless asked. Trivial one-liners need no
-test, YAGNI applies to tests too.
+Verify the requested behavior and affected failure cases. Reuse existing
+tests, fixtures and reproducible checks before adding a new one; no quota
+of one test per change and no new framework merely for ceremony. The owning
+project's applicable validation and release requirements govern; this style
+neither expands them nor substitutes one small test for them. A one-line
+money/security change can still need a regression check. Reuse valid evidence
+and stop after the requested result and required checks are complete.
 
 ## Boundaries
 
