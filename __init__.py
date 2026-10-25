@@ -29,7 +29,7 @@ _current_mode = None
 _rendered_skills = None
 
 HERMES_SKILL_METADATA = {
-    "ponytail": ("Coding restraint: explicit mode or plugin context.", "1.0.0"),
+    "ponytail": ("Coding restraint: explicit mode or plugin context.", "1.0.1"),
     "ponytail-review": ("Explicit complexity review of a diff; read only.", "1.0.0"),
     "ponytail-audit": ("Explicit whole-repo complexity audit; read only.", "1.0.0"),
     "ponytail-debt": ("Explicit ponytail debt inventory; read only.", "1.0.2"),
@@ -179,8 +179,10 @@ def _fallback_instructions(mode: str) -> str:
         "No unrequested abstractions, avoidable dependencies, boilerplate, or "
         "speculative scaffolding. Deletion over addition. Boring over clever. "
         "Do not simplify away trust-boundary validation, data-loss handling, "
-        "security, accessibility, explicitly requested behavior, or one small "
-        "runnable check for non-trivial logic."
+        "security, accessibility, explicitly requested behavior, or applicable "
+        "project validation. Reuse existing checks; inspect only the affected path "
+        "and evidence-backed dependencies. Stop after the requested result and "
+        "required checks are complete."
     )
 
 
