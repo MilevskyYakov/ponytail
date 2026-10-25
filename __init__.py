@@ -206,10 +206,41 @@ def build_injected_context(mode: str | None = None) -> str:
         return _fallback_instructions(effective)
 
 
-def _pre_llm_call(session_id: str = "", **_: Any) -> dict[str, str] | None:
-    mode = _current_mode or _default_mode()
+def _pre_llm_call(session_id: str = "", user_message: str = "", conversation_history=None, **_: Any) -> dict[str, str]:
+    global _current_mode
+    if isinstance(user_message, str) and user_message.strip().lower() in {"stop ponytail", "normal mode"}:
+        _current_mode = "off"
+    mode = _current_mode
+    if mode is None:
+        # Restore the latest sent state on resume, without rewriting cache prefixes.
+        for message in reversed(conversation_history or []):
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            content = message.get("api_content") or message.get("content", "")
+            if not isinstance(content, str):
+                continue
+            states = re.findall(r"(?:^|\n)PONYTAIL MODE (?:ACTIVE — level: (lite|full|ultra|review)\b|(OFF)\b)", content)
+            if states:
+                level, off = states[-1]
+                mode = "off" if off else level
+                break
+    mode = mode or _default_mode()
+    if mode == "off":
+        return {"context": "PONYTAIL MODE OFF. Do not apply the Ponytail reference rules."}
     context = build_injected_context(mode)
-    return {"context": context} if context else None
+    # Reuse only rules actually present in retained history, not a process-local
+    # flag. If compaction drops them, the next turn restores the complete text.
+    for message in conversation_history or []:
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("api_content") or message.get("content", "")
+        if isinstance(content, str) and context in content:
+            return {"context": (
+                f"PONYTAIL MODE ACTIVE — level: {mode}. "
+                "Keep this level's complete rules already present in the conversation. "
+                "An explicit user request to stop/change mode takes precedence."
+            )}
+    return {"context": context}
 
 
 def _skill_prompt(command: str, args: str = "") -> str:

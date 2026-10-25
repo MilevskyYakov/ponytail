@@ -336,3 +336,36 @@ print(json.dumps(cases, sort_keys=True))
   assert.equal(data['/status'], null);
   assert.equal(data.hello, null);
 });
+
+test('Hermes reuses complete retained rules and restores them after compaction', () => {
+  python(String.raw`
+import importlib.util, copy
+spec = importlib.util.spec_from_file_location('ponytail_hermes_plugin', '__init__.py')
+mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+history = []
+for mode in ['full', 'lite', 'ultra', 'full']:
+    mod._handle_mode_command(mode)
+    expected = mod.build_injected_context(mode)
+    first = mod._pre_llm_call(conversation_history=history)['context']
+    if mode != 'full' or not history:
+        assert first == expected
+        history.append({'role':'user', 'content':'task', 'api_content':'task\n'+first})
+    snapshot = copy.deepcopy(history)
+    repeated = mod._pre_llm_call(conversation_history=history)['context']
+    assert mode in repeated and len(repeated) < 500
+    assert '## The ladder' not in repeated and history == snapshot
+    # No old rules survive this representative compaction boundary.
+    compressed = [{'role':'user', 'content':'[CONTEXT COMPACTION] Task facts only.'}]
+    assert mod._pre_llm_call(conversation_history=compressed)['context'] == expected
+mod._handle_mode_command('off')
+assert 'PONYTAIL MODE OFF' in mod._pre_llm_call(conversation_history=history)['context']
+# A restarted plugin restores the last API state without rewriting history.
+mod._current_mode = None
+history.append({'role':'user','content':'task','api_content':'task\nPONYTAIL MODE OFF. Do not apply the Ponytail reference rules.'})
+assert 'PONYTAIL MODE OFF' in mod._pre_llm_call(conversation_history=history)['context']
+mod._current_mode = None
+assert 'level: ultra' in mod._pre_llm_call(conversation_history=[{'role':'user','api_content':mod.build_injected_context('ultra')}])['context']
+mod._pre_llm_call(user_message='normal mode')
+assert 'PONYTAIL MODE OFF' in mod._pre_llm_call(user_message='next task')['context']
+`);
+});
